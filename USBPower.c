@@ -26,11 +26,13 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include "pico/stdlib.h"
 #include "Capture.pio.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
 #include "hardware/dma.h"
 #include "hardware/pio.h"
+#include "remoteDescriptors.h"
 
 #include "bsp/board.h"
 #include "tusb.h"
@@ -76,6 +78,32 @@ void hid_task(void);
 /*------------- MAIN -------------*/
 int main(void)
 {
+  stdio_init_all();
+  dmaChan = dma_claim_unused_channel(true);
+  float clkdiv = 125000000 / (38000 * 5);
+
+  irq_set_exclusive_handler(DMA_IRQ_0, dmaHandler);
+  irq_set_enabled(DMA_IRQ_0, true);
+  printf("%d\n", irq_is_enabled(DMA_IRQ_0));
+
+  pio = pio0;
+  sm = pio_claim_unused_sm(pio, true);
+
+  // uint capturePin = 13;
+  // uint vS = 14;
+
+  uint offset = pio_add_program(pio, &capture_program);
+
+  //setup power to sensor
+  gpio_init(vS);
+  gpio_set_dir(vS, true);
+  gpio_put(vS, true);
+  //for interfacing with sensor
+  gpio_pull_up(capturePin);
+
+  setupDma(pio, sm);
+  setupPIO(pio, sm, offset, capturePin, false, clkdiv);
+    
   board_init();
   tusb_init();
 
@@ -139,7 +167,7 @@ static void send_hid_report(uint8_t report_id, uint32_t btn)
       // no button, right + down, no scroll, no pan
       if (btn)
       {
-      tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, delta, delta, 0, 0);
+      tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 0, 0, delta, delta);
       }
     }
     break;
@@ -208,31 +236,7 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
 // received data on OUT endpoint ( Report ID = 0, Type = 0 )
 void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize)
 {
-  (void) instance;
-
-//   if (report_type == HID_REPORT_TYPE_OUTPUT)
-//   {
-//     // Set keyboard LED e.g Capslock, Numlock etc...
-//     if (report_id == REPORT_ID_KEYBOARD)
-//     {
-//       // bufsize should be (at least) 1
-//       if ( bufsize < 1 ) return;
-
-//       uint8_t const kbd_leds = buffer[0];
-
-//       if (kbd_leds & KEYBOARD_LED_CAPSLOCK)
-//       {
-//         // Capslock On: disable blink, turn led on
-//         blink_interval_ms = 0;
-//         board_led_write(true);
-//       }else
-//       {
-//         // Caplocks Off: back to normal blink
-//         board_led_write(false);
-//         blink_interval_ms = BLINK_MOUNTED;
-//       }
-//     }
-//   }
+  (void) instance; //implementation unneeded?
 }
 
 //--------------------------------------------------------------------+
