@@ -56,6 +56,9 @@ PIO pio;
 uint sm;
 uint8_t mouseState[5] = {0};
 bool frozenState[5] = {0};
+bool utilityActive = false;
+bool clickOut = true; //click to exit holding
+
 const uint32_t timeOut = 100; //25 ms after updates before clearing
 uint32_t timeOutCounter = 0;
 
@@ -173,7 +176,7 @@ static void send_hid_report(uint8_t report_id, uint32_t btn)
       {
           for (int i = 0; i < 5; i++)
           {
-            if (true)
+            if (!frozenState[i])
             {
               mouseState[i] = 0;
             }
@@ -270,7 +273,6 @@ void led_blinking_task(void)
   start_ms += blink_interval_ms;
 
   board_led_write(led_state);
-  printf("test\n");
   led_state = 1 - led_state; // toggle
 }
 
@@ -335,13 +337,27 @@ void dmaHandler()
         {
           if (id == commandIDs[i])
           {
-            for (int j = 0; j < 5; j++)
+            mouseState[allDescriptors[i][0]] = allDescriptors[i][1];
+            timeOutCounter = board_millis();
+            if ((mouseState[1] != 0) || (mouseState[2] != 0))
             {
-              mouseState[j] = allDescriptors[i][j];
-              timeOutCounter = board_millis();
+              clickOut = true;
+            }
+            if (frozenState[0] && clickOut)
+            {
+              if (allDescriptors[i][0] == 0)
+              {
+                frozenState[0] = false;
+              }
             }
             break;
           }
+        }
+        if ((id == utilityID) && (!repeatBit))
+        {
+          frozenState[0] = !frozenState[0];
+          clickOut = false;
+          printf("%d\n", frozenState[0]);
         }
         printf("Raw: %u, Command: %u, Repeat: %d\n", extractedData, n1 >> 1, n1 & 1u);
     }
