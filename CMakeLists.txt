@@ -20,6 +20,7 @@ pico_sdk_init()
 # Add executable. Default name is the project name, version 0.1
 
 add_executable(USBPower)
+pico_generate_pio_header(USBPower ${CMAKE_CURRENT_LIST_DIR}/Capture.pio)
 target_sources(USBPower PUBLIC
         ${CMAKE_CURRENT_LIST_DIR}/USBPower.c
         ${CMAKE_CURRENT_LIST_DIR}/usb_descriptors.c)
@@ -28,7 +29,7 @@ target_sources(USBPower PUBLIC
 target_include_directories(USBPower PUBLIC
         ${CMAKE_CURRENT_LIST_DIR})
 
-target_link_libraries(USBPower pico_stdlib tinyusb_device tinyusb_board)
+target_link_libraries(USBPower pico_stdlib tinyusb_device tinyusb_board hardware_dma hardware_pio)
 
 pico_set_program_name(USBPower "USBPower")
 pico_set_program_version(USBPower "0.1")

@@ -26,6 +26,11 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include "Capture.pio.h"
+#include "hardware/gpio.h"
+#include "hardware/irq.h"
+#include "hardware/dma.h"
+#include "hardware/pio.h"
 
 #include "bsp/board.h"
 #include "tusb.h"
@@ -35,6 +40,19 @@
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF PROTYPES
 //--------------------------------------------------------------------+
+#define captureSize 432
+#define capturePin 13
+#define vS 14
+
+void dmaHandler();
+static inline void setupDma(PIO, uint);
+static inline void setupPIO(PIO, uint, uint, uint, bool, float);
+
+uint32_t buffer[captureSize];
+uint dmaChan;
+PIO pio;
+uint sm;
+
 
 /* Blink pattern
  * - 250 ms  : device not mounted
@@ -51,6 +69,9 @@ static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 
 void led_blinking_task(void);
 void hid_task(void);
+
+
+
 
 /*------------- MAIN -------------*/
 int main(void)
@@ -232,4 +253,101 @@ void led_blinking_task(void)
   board_led_write(led_state);
   printf("test\n");
   led_state = 1 - led_state; // toggle
+}
+
+void dmaHandler()
+{
+    // printf("Received, proccessing ready\n");
+    bool state = true;
+    bool currentState;
+    uint32_t stateWidth = 0;
+    uint32_t tempWidth;
+    uint32_t extractedData = 0;
+    for (int i = 0; i < captureSize; i++)
+    {
+        for (int j = 0; j < 32; j++) //iterate from lsb of data
+        {
+            currentState = !((bool) ((buffer[i] >> j) && 1u)); //1 is off 0 is on
+            if (currentState == state)
+            {
+                stateWidth += 1;
+            }
+            if (currentState != state)
+            {
+                // printf("State: %s, Width: %d\n", state ? "True": "False", stateWidth);
+                if (state)
+                {
+                    tempWidth = stateWidth; // the on time divided by off time will determine if the signal is on or off
+                }
+                if (!state) //it is false so divide true by false
+                {
+                    float temp = (float) tempWidth / stateWidth;
+                    // printf("%2.3f\n", temp);
+                    if (temp < 1.2)
+                    {
+                        extractedData *= 2;
+                        if (temp < 0.5)
+                        {
+                            extractedData += 1;
+                        }
+                    }
+
+                }
+
+                stateWidth = 1;
+                state = !state;
+            }
+        }
+    }
+    if (stateWidth != 1)
+    {
+        // printf("State: %s, Width: %d\n", state ? "True": "False", stateWidth);
+    }
+    // printf("Transfer done\n");
+
+    char n2 = extractedData & (char) 255;
+    char n1 = (extractedData >> 8) & (char) 255;
+    if (n1 + n2 == 255)
+    {
+        // printf("%u\n", extractedData);
+        printf("Raw: %u, Command: %u, Repeat: %d\n", extractedData, n1 >> 1, n1 & 1u);
+    }
+
+
+    dma_channel_acknowledge_irq0(dmaChan);
+    pio_sm_exec(pio, sm, pio_encode_wait_pin(false, 0));
+    dma_channel_set_write_addr(dmaChan, &buffer, true);
+    pio_sm_clear_fifos(pio, sm);
+    return;
+}
+static inline void setupPIO(PIO pio, uint sm, uint offset, uint pin, bool trigger, float clkdiv)
+{
+    pio_sm_config c = capture_program_get_default_config(offset);
+    sm_config_set_in_pins(&c, pin);
+    sm_config_set_in_shift(&c, true, true, 32);  //set autopush to true
+    sm_config_set_clkdiv(&c, clkdiv);
+    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, false);
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_exec(pio, sm, pio_encode_wait_pin(trigger, 0));
+    pio_sm_set_enabled(pio, sm, true);
+
+}
+
+static inline void setupDma(PIO pio, uint sm)
+{
+    dma_channel_config dc = dma_channel_get_default_config(dmaChan);
+    channel_config_set_transfer_data_size(&dc, DMA_SIZE_32);
+    channel_config_set_dreq(&dc, pio_get_dreq(pio, sm, false));
+    channel_config_set_read_increment(&dc, false);
+    channel_config_set_write_increment(&dc, true);
+
+    dma_channel_set_irq0_enabled(dmaChan, true);
+    dma_channel_configure(dmaChan,
+        &dc,
+        &buffer,
+        &pio->rxf[sm],
+        captureSize,
+        true
+    );
+
 }
