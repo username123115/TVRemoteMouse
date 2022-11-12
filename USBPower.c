@@ -54,6 +54,10 @@ uint32_t buffer[captureSize];
 uint dmaChan;
 PIO pio;
 uint sm;
+uint8_t mouseState[5] = {0};
+bool frozenState[5] = {0};
+const uint32_t timeOut = 100; //25 ms after updates before clearing
+uint32_t timeOutCounter = 0;
 
 
 /* Blink pattern
@@ -165,10 +169,21 @@ static void send_hid_report(uint8_t report_id, uint32_t btn)
       int8_t const delta = 5;
 
       // no button, right + down, no scroll, no pan
-      if (btn)
+      if ((board_millis() - timeOutCounter) >= timeOut)
       {
-      tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 0, 0, delta, delta);
+          for (int i = 0; i < 5; i++)
+          {
+            if (true)
+            {
+              mouseState[i] = 0;
+            }
+          }
       }
+      tud_hid_mouse_report(REPORT_ID_MOUSE, mouseState[0], mouseState[1], mouseState[2], mouseState[3], mouseState[4]);
+      // if (btn)
+      // {
+      // tud_hid_mouse_report(REPORT_ID_MOUSE, 0x01, 0, 0, 0, 0);
+      // }
     }
     break;
     default: break;
@@ -314,6 +329,20 @@ void dmaHandler()
     if (n1 + n2 == 255)
     {
         // printf("%u\n", extractedData);
+        char id = n1 >> 1;
+        char repeatBit = n1 & 1u;
+        for (int i = 0; i < totalButtons; i++)
+        {
+          if (id == commandIDs[i])
+          {
+            for (int j = 0; j < 5; j++)
+            {
+              mouseState[j] = allDescriptors[i][j];
+              timeOutCounter = board_millis();
+            }
+            break;
+          }
+        }
         printf("Raw: %u, Command: %u, Repeat: %d\n", extractedData, n1 >> 1, n1 & 1u);
     }
 
