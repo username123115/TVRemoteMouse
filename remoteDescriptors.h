@@ -2,7 +2,7 @@
 #pragma once
 #include <stdio.h>
 #define totalButtons 8
-
+#define sens 10
 
 uint8_t allDescriptors[totalButtons][2] = {
 {3, 1}, //pan up
